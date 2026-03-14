@@ -153,20 +153,20 @@ def log_turn(session_id: str, turn_data: dict, high_value_customer: bool = False
         log["turns"] = []
 
     log["turns"].append({
-        "turn_number":        turn_data.get("turn_number", len(log["turns"]) + 1),
-        "user_message":       turn_data.get("user_message", ""),
-        "frustration_score":  turn_data.get("frustration_score", 0),
-        "frustration_level":  turn_data.get("frustration_level", ""),
-        "sentiment_score":    turn_data.get("sentiment_score", 0),
-        "response_mode":      turn_data.get("response_type", "normal"),
-        "bot_response":       turn_data.get("bot_response", ""),
-        "handover_triggered": turn_data.get("handover_triggered", False),
-        "trend":              turn_data.get("trend", "stable"),
+        "turn_number":        int(turn_data.get("turn_number", len(log["turns"]) + 1)),
+        "user_message":       str(turn_data.get("user_message", "")),
+        "frustration_score":  float(turn_data.get("frustration_score", 0)),
+        "frustration_level":  str(turn_data.get("frustration_level", "")),
+        "sentiment_score":    float(turn_data.get("sentiment_score", 0)),
+        "response_mode":      str(turn_data.get("response_type", "normal")),
+        "bot_response":       str(turn_data.get("bot_response", "")),
+        "handover_triggered": bool(turn_data.get("handover_triggered", False)),
+        "trend":              str(turn_data.get("trend", "stable")),
         "timestamp":          datetime.utcnow().isoformat(),
     })
 
-    if turn_data.get("frustration_score", 0) > log.get("peak_frustration", 0):
-        log["peak_frustration"] = turn_data["frustration_score"]
+    if float(turn_data.get("frustration_score", 0)) > float(log.get("peak_frustration", 0)):
+        log["peak_frustration"] = float(turn_data["frustration_score"])
 
     if turn_data.get("handover_triggered"):
         log["handover_triggered"] = True
