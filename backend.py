@@ -155,58 +155,44 @@ LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 
 # ── Load session logs ─────────────────────────────────────────────────────────
 def load_sessions(max_age_mins=60):
+    """Load sessions from DynamoDB (deployed) or local files (local dev)."""
+    raw_sessions = load_all_sessions(max_age_mins=max_age_mins)
     sessions = []
-    if not os.path.exists(LOG_DIR):
-        return sessions
-    for path in glob.glob(os.path.join(LOG_DIR, "session_*.json")):
+    for raw in raw_sessions:
         try:
-            with open(path) as f:
-                raw = json.load(f)
-
-            ts = raw.get("last_updated") or raw.get("started_at","")
-            if ts:
-                dt  = datetime.fromisoformat(ts)
-                age = (datetime.utcnow() - dt).total_seconds() / 60
-                if age > max_age_mins:
-                    continue
-
-            # ── Normalise log format → backend format ─────────────────────────
             turns = raw.get("turns", [])
             frustration_history = [t.get("frustration_score", 0) for t in turns]
             latest_frustration  = frustration_history[-1] if frustration_history else 0
             turn_count          = len(turns)
 
-            # Frustration level label
             if latest_frustration < 0.25:   level = "calm"
             elif latest_frustration < 0.45: level = "mild"
             elif latest_frustration < 0.65: level = "moderate"
             elif latest_frustration < 0.78: level = "high"
             else:                           level = "critical"
 
-            # Customer info — stored in log or from customer_data field
-            cdata = raw.get("customer_data") or {}
-            customer_name = cdata.get("name") or raw.get("customer_name","Unknown Customer")
-            customer_id   = cdata.get("customer_id") or raw.get("customer_id","")
+            cdata         = raw.get("customer_data") or {}
+            customer_name = cdata.get("name") or raw.get("customer_name", "Unknown Customer")
+            customer_id   = cdata.get("customer_id") or raw.get("customer_id", "")
             is_vip        = cdata.get("is_vip") or raw.get("high_value_customer", False)
 
             sessions.append({
-                "session_id":           raw.get("session_id",""),
-                "customer_name":        customer_name,
-                "customer_id":          customer_id,
-                "is_vip":               is_vip,
-                "turn_count":           turn_count,
-                "latest_frustration":   latest_frustration,
-                "frustration_level":    level,
-                "frustration_history":  frustration_history,
-                "handover_triggered":   raw.get("handover_triggered", False),
-                "handover_reason":      raw.get("handover_reason"),
-                "last_updated":         raw.get("last_updated",""),
-                "started_at":           raw.get("started_at",""),
+                "session_id":          raw.get("session_id", ""),
+                "customer_name":       customer_name,
+                "customer_id":         customer_id,
+                "is_vip":              is_vip,
+                "turn_count":          turn_count,
+                "latest_frustration":  latest_frustration,
+                "frustration_level":   level,
+                "frustration_history": frustration_history,
+                "handover_triggered":  raw.get("handover_triggered", False),
+                "handover_reason":     raw.get("handover_reason"),
+                "last_updated":        raw.get("last_updated", ""),
+                "started_at":          raw.get("started_at", ""),
             })
         except Exception as e:
-            print(f"[Backend] Error reading {path}: {e}")
+            print(f"[Backend] Error parsing session: {e}")
     return sorted(sessions, key=lambda s: s.get("last_updated",""), reverse=True)
-
 
 def mock_sessions():
     """Return demo sessions when no real logs exist."""
