@@ -18,6 +18,11 @@ from core.trend_tracker import TrendTracker
 from core.response_manager import get_response_mode, build_response, format_debug_info
 from core.intent_engine import get_contextual_reply, detect_intent
 from core.handover_manager import HandoverManager
+try:
+    from aws.alert_manager import send_handover_alert
+    _alerts_available = True
+except ImportError:
+    _alerts_available = False
 from utils.logger import get_session_id, log_turn, log_session_end, purge_expired_logs
 from utils.input_validator import validate_input
 from config import BOT_NAME, COMPANY_NAME
@@ -197,6 +202,22 @@ class EmotionChatbotPipeline:
                 trend_summary=self.trend_tracker.get_summary(),
                 reason=handover_reason
             )
+            # ── Send email alert ─────────────────────────────────────────────
+            if _alerts_available and not getattr(self, "_alert_sent", False):
+                try:
+                    cdata = getattr(self, "_customer_data", {}) or {}
+                    send_handover_alert(
+                        customer_name    = cdata.get("name", "Unknown Customer"),
+                        customer_id      = cdata.get("customer_id", ""),
+                        frustration_score= frustration["frustration_score"],
+                        session_id       = self.session_id,
+                        last_messages    = self.conversation_history[-6:],
+                        is_vip           = cdata.get("is_vip", False),
+                        reason           = handover_reason or "High frustration detected",
+                    )
+                    self._alert_sent = True  # Only send once per session
+                except Exception as e:
+                    print(f"[Pipeline] Alert error: {e}")
 
         # ── Step 8: Log Turn ────────────────────────────────────────────────────
         # user turn already appended at Step 4c — only append bot reply here
