@@ -1,0 +1,27 @@
+# ── Secrets — NEVER commit these ─────────────────────────────────────────────
+.streamlit/secrets.toml
+.env
+*.env
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# ── Logs — contain customer data ─────────────────────────────────────────────
+logs/session_*.json
+
+# ── Models — too large for GitHub ────────────────────────────────────────────
+models/saved/
+*.pt
+*.bin
+*.safetensors
+
+# ── Mac ───────────────────────────────────────────────────────────────────────
+.DS_Store
+
+# ── Notebooks output ──────────────────────────────────────────────────────────
+notebooks/.ipynb_checkpoints/

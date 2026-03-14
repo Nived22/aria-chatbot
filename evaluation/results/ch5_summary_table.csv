@@ -1,0 +1,9 @@
+Metric,Value,Section,Target,Status
+Frustration Recovery Rate (FRR),33%,§5.3,>60%,⚠️
+Handover Rate,100%,§5.3,Contextual,ℹ️
+Avg Turn at Handover,5.0,§5.3,3-6 turns,✅
+Unnecessary Handovers,0%,§5.3,<20%,✅
+User Satisfaction Score,2.07/5,§5.3,>3.5/5,⚠️
+Perceived Empathy Score,3.6/5,§5.3,>3.5/5,✅
+Mean Response Latency,280ms,§5.2,<1000ms,✅
+95th Percentile Latency,1137ms,§5.2,<1000ms,⚠️

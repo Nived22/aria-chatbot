@@ -1,0 +1,55 @@
+{
+  "generated_at": "2026-03-05T01:09:19.792210",
+  "total_sessions": 3,
+  "total_turns": 15,
+  "system_performance": {
+    "response_latency": {
+      "mean_ms": 280.5,
+      "median_ms": 40.7,
+      "p95_ms": 1137.1,
+      "max_ms": 3673.7,
+      "pct_under_1000ms": 93.3,
+      "meets_target": false
+    },
+    "frustration_score_stats": {
+      "mean": 0.5053,
+      "std": 0.2383,
+      "peak": 0.9532
+    }
+  },
+  "human_centred": {
+    "frustration_recovery_rate": {
+      "frustration_recovery_rate": 0.3333,
+      "pct": 33.3,
+      "eligible_sessions": 3,
+      "recovered_sessions": 1,
+      "avg_frustration_reduction": 0.2519
+    },
+    "handover_efficiency": {
+      "handover_rate": 1.0,
+      "handover_pct": 100.0,
+      "total_handovers": 3,
+      "avg_turn_at_handover": 5.0,
+      "unnecessary_handovers": 0,
+      "unnecessary_pct": 0.0
+    },
+    "user_satisfaction": {
+      "satisfaction": {
+        "mean": 2.07,
+        "std": 1.02,
+        "n": 3
+      },
+      "perceived_empathy": {
+        "mean": 3.6,
+        "std": 0.65,
+        "n": 3
+      },
+      "trust_reliability": {
+        "mean": 4.0,
+        "std": 0.41,
+        "n": 3
+      },
+      "overall_mean": 3.22
+    }
+  }
+}
