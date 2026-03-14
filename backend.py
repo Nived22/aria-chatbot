@@ -1,11 +1,14 @@
 # backend.py — Agent Backend Dashboard (agent/admin facing only)
 # Run: streamlit run backend.py --server.port 8502
 import streamlit as st
-import json, os, glob, time
+import json, os, glob, time, sys
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from datetime import datetime, timedelta
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils.logger import load_all_sessions
 from aws.customer_db import list_all_customers
 
 st.set_page_config(
