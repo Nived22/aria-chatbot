@@ -300,12 +300,16 @@ def get_contextual_reply(
        - Uses Haiku for calm/mild + simple intents (fast)
        - Uses Sonnet for high frustration or complex intents (quality)
     """
-    # 1. Order number — detect and look up real order data
+    # 1. Order number — detect in current message or history
     is_order, order_num = _check_order_number(message)
+
+    # If not in current message, check history
+    if not order_num and conversation_history:
+        order_num = _extract_order_from_history(conversation_history)
 
     # Look up real order data from DynamoDB
     order_data = None
-    if is_order and order_num and _order_db_available:
+    if order_num and _order_db_available:
         try:
             order_data = lookup_order(order_num)
         except Exception as e:

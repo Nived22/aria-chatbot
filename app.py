@@ -88,16 +88,16 @@ html, body, .stApp { background: #0a0a0f !important; font-family: 'DM Sans', san
 
 .bubble {
     max-width: 65%;
-    min-width: 80px;
+    min-width: 120px;
     padding: 12px 16px;
     font-size: 14.5px; line-height: 1.65;
-    word-break: break-word;
-    overflow-wrap: anywhere;
-    white-space: pre-wrap;
+    word-break: normal;
+    overflow-wrap: break-word;
+    white-space: normal;
     hyphens: none;
 }
 .bubble.usr {
-    min-width: 80px;
+    min-width: 120px;
     max-width: 65%;
 }
 .bubble.bot {
