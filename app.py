@@ -129,6 +129,26 @@ html, body, .stApp { background: #0a0a0f !important; font-family: 'DM Sans', san
 .msg-time { font-size:11px; color:rgba(255,255,255,0.2); margin-top:4px; }
 
 /* ── Typing indicator ── */
+/* ── Name input ── */
+div[data-testid="stTextInput"] input {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(108,99,255,0.3) !important;
+    border-radius: 10px !important;
+    color: #e2e8f0 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 14px !important;
+    padding: 10px 14px !important;
+    text-align: center !important;
+}
+div[data-testid="stTextInput"] input:focus {
+    border-color: rgba(108,99,255,0.7) !important;
+    box-shadow: 0 0 0 2px rgba(108,99,255,0.15) !important;
+    outline: none !important;
+}
+div[data-testid="stTextInput"] input::placeholder {
+    color: rgba(255,255,255,0.25) !important;
+}
+
 .typing-wrap { display:flex; gap:10px; margin-bottom:18px; }
 .typing-bubble {
     background: #15152a; border: 1px solid rgba(255,255,255,0.07);
@@ -224,7 +244,7 @@ def init():
     d = {
         "pipeline": None, "messages": [], "frustration_history": [],
         "turn_labels": [], "last_result": None, "greeted": False,
-        "high_value_user": False, "customer_data": None, "customer_id": None,
+        "high_value_user": False, "customer_data": None, "customer_id": None, "typed_name": "",
         "response_modes_used": [], "latencies_ms": [],
         "survey_submitted": False, "show_survey": False, "survey_data": {}
     }
@@ -239,25 +259,55 @@ def init():
 
 init()
 
-# ── Customer selector (minimal — just name picker, no metrics shown) ──────────
-customer_options = {
-    "James Wilson":       "C001",
-    "Sarah Chen":         "C002",
-    "Mohammed Al-Hassan": "C003",
-    "Emily Roberts":      "C004",
-    "David Park":         "C005",
-    "Guest":              "C006",
+# ── Name input — tester types their own name ─────────────────────────────────
+typed_name = st.text_input(
+    "Your name",
+    value=st.session_state.get("typed_name", ""),
+    placeholder="Enter your name to start...",
+    label_visibility="collapsed",
+    max_chars=40,
+)
+
+# Clean and fallback
+typed_name = typed_name.strip() or "Guest"
+
+# Build customer data from typed name
+# Check if it matches a known VIP customer by name (case-insensitive)
+_known = {
+    "james wilson":       "C001",
+    "sarah chen":         "C002",
+    "mohammed al-hassan": "C003",
+    "emily roberts":      "C004",
+    "david park":         "C005",
 }
-selected = st.selectbox("Who are you?", list(customer_options.keys()),
-                        index=0, label_visibility="collapsed")
-cid = customer_options[selected]
-if st.session_state.customer_id != cid:
-    st.session_state.customer_id    = cid
-    is_vip, cdata                   = is_vip_customer(cid)
-    st.session_state.customer_data  = cdata
+_cid_match = _known.get(typed_name.lower(), None)
+
+if _cid_match:
+    # Known customer — load from DynamoDB
+    cid = _cid_match
+else:
+    # Unknown tester — create guest profile with their name
+    cid = f"GUEST_{typed_name[:8].replace(' ','_').upper()}"
+
+# Rebuild cdata when name changes
+if st.session_state.get("typed_name") != typed_name:
+    st.session_state.typed_name = typed_name
+    if _cid_match:
+        is_vip, cdata = is_vip_customer(cid)
+    else:
+        cdata = {
+            "customer_id":   cid,
+            "name":          typed_name,
+            "total_spent":   0.0,
+            "order_count":   0,
+            "is_vip":        False,
+            "last_order":    None,
+        }
+        is_vip = False
+    st.session_state.customer_id     = cid
+    st.session_state.customer_data   = cdata
     st.session_state.high_value_user = is_vip
-    st.session_state.greeted        = False
-    # Push customer data into pipeline immediately so logs show customer name
+    st.session_state.greeted         = False
     if st.session_state.pipeline:
         st.session_state.pipeline.customer_data = cdata
 
