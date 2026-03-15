@@ -18,6 +18,12 @@ try:
 except ImportError:
     _anthropic_available = False
 
+try:
+    from aws.order_db import lookup_order, format_order_for_claude
+    _order_db_available = True
+except ImportError:
+    _order_db_available = False
+
 
 # ── Intent definitions ────────────────────────────────────────────────────────
 # Detected locally — no API call needed for classification
@@ -236,6 +242,15 @@ def _build_context_summary(history: list, customer_data: dict | None) -> str:
             f"NEVER ask for the order number again. You have it. "
             f"Any follow-up questions must reference order #{known_order} directly."
         )
+        # Look up real order data for follow-up messages
+        if _order_db_available:
+            try:
+                order = lookup_order(known_order)
+                if order:
+                    from aws.order_db import format_order_for_claude
+                    lines.append(format_order_for_claude(order))
+            except Exception:
+                pass
 
     # Conversation summary — what has been discussed
     if history:
@@ -285,8 +300,16 @@ def get_contextual_reply(
        - Uses Haiku for calm/mild + simple intents (fast)
        - Uses Sonnet for high frustration or complex intents (quality)
     """
-    # 1. Order number — handle directly without going through emergency fallback
+    # 1. Order number — detect and look up real order data
     is_order, order_num = _check_order_number(message)
+
+    # Look up real order data from DynamoDB
+    order_data = None
+    if is_order and order_num and _order_db_available:
+        try:
+            order_data = lookup_order(order_num)
+        except Exception as e:
+            print(f"[IntentEngine] Order lookup error: {e}")
 
     # 2. Small talk — instant, no API
     small_talk = _check_small_talk(message)
@@ -302,7 +325,8 @@ def get_contextual_reply(
                 conversation_history or [],
                 customer_data or {},
                 intent,
-                order_num=order_num if is_order else None
+                order_num=order_num if is_order else None,
+                order_data=order_data,
             )
         except Exception as e:
             import traceback
@@ -324,7 +348,8 @@ def _call_claude(
     history: list,
     customer_data: dict,
     intent: str | None,
-    order_num: str | None = None
+    order_num: str | None = None,
+    order_data: dict | None = None,
 ) -> str:
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
@@ -374,15 +399,22 @@ def _call_claude(
     # ── Context block — memory + personalisation ──────────────────────────────
     context = _build_context_summary(history, customer_data)
 
-    # ── Order number override ─────────────────────────────────────────────────
+    # ── Order data — real lookup from DynamoDB ───────────────────────────────
     order_ctx = ""
-    if order_num:
+    if order_num and order_data:
+        from aws.order_db import format_order_for_claude
+        order_ctx = format_order_for_claude(order_data)
+        order_ctx += (
+            f"\n\nINSTRUCTION: You now have REAL order data above. "
+            f"Use it to give a specific, accurate response. "
+            f"DO NOT make up any details — use exactly what is shown. "
+            f"DO NOT ask for the order number again."
+        )
+    elif order_num:
         order_ctx = (
-            f"ORDER NUMBER JUST PROVIDED: {order_num} — "
-            f"The customer just gave you their order number. "
-            f"DO NOT ask for it again. "
+            f"ORDER NUMBER PROVIDED: {order_num} — "
             f"Acknowledge you have it and tell them what you are doing next. "
-            f"Say something like: 'Thanks, I have order {order_num} here — [next helpful step].'"
+            f"DO NOT ask for the order number again."
         )
 
     # ── Intent context ────────────────────────────────────────────────────────
