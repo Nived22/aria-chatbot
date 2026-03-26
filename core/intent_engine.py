@@ -365,8 +365,8 @@ def _call_claude(
         frustration_score >= 0.65 or
         intent in complex_intents
     )
-    model = "claude-sonnet-4-20250514" if use_sonnet else "claude-haiku-4-5-20251001"
-    max_tokens = 180 if use_sonnet else 120
+    model = "claude-sonnet-4-6" if use_sonnet else "claude-haiku-4-5-20251001"
+    max_tokens = 150 if use_sonnet else 100
 
     # ── Tone instruction ──────────────────────────────────────────────────────
     if frustration_score >= 0.78:
@@ -430,7 +430,7 @@ def _call_claude(
     messages = []
 
     # Last 10 turns of history (up from 8 — better memory)
-    for turn in history[-10:]:
+    for turn in history[-6:]:
         role = "user" if turn.get("role") == "user" else "assistant"
         text = turn.get("text","").strip()
         if text:
