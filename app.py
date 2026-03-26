@@ -128,8 +128,35 @@ html, body, .stApp { background: #0a0a0f !important; font-family: 'DM Sans', san
 
 .msg-time { font-size:11px; color:rgba(255,255,255,0.2); margin-top:4px; }
 
-/* ── Typing indicator ── */
-/* ── Name input ── */
+/* ── Name screen ── */
+.name-screen {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    background: #0a0a0f;
+    padding: 40px 24px;
+}
+.name-logo {
+    width: 72px; height: 72px;
+    background: linear-gradient(135deg,#6c63ff,#a855f7);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px;
+    box-shadow: 0 0 0 8px rgba(108,99,255,0.12);
+    margin-bottom: 20px;
+}
+.name-title {
+    font-size: 22px; font-weight: 600; color: #fff;
+    margin-bottom: 6px; text-align: center;
+}
+.name-sub {
+    font-size: 14px; color: rgba(255,255,255,0.35);
+    margin-bottom: 28px; text-align: center;
+}
+
 div[data-testid="stTextInput"] input {
     background: rgba(255,255,255,0.04) !important;
     border: 1px solid rgba(108,99,255,0.3) !important;
@@ -208,6 +235,18 @@ div[data-testid="stTextInput"] input::placeholder {
     color: #a78bfa !important;
 }
 
+/* ── Start chat button override ── */
+[data-testid="stButton-start_chat"] > button {
+    background: linear-gradient(135deg,#6c63ff,#7c3aed) !important;
+    border: none !important;
+    color: #fff !important;
+    border-radius: 12px !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    padding: 10px 32px !important;
+    box-shadow: 0 4px 18px rgba(108,99,255,0.35) !important;
+}
+
 /* ── Survey card ── */
 .survey-shell {
     background: linear-gradient(135deg,#0f0f1e,#15152a);
@@ -239,83 +278,129 @@ label { color: rgba(255,255,255,0.45) !important; font-size:12px !important; }
 """, unsafe_allow_html=True)
 
 
-# ── Session init ──────────────────────────────────────────────────────────────
-def init():
-    d = {
-        "pipeline": None, "messages": [], "frustration_history": [],
-        "turn_labels": [], "last_result": None, "greeted": False,
-        "high_value_user": False, "customer_data": None, "customer_id": None, "typed_name": "",
-        "response_modes_used": [], "latencies_ms": [],
-        "survey_submitted": False, "show_survey": False, "survey_data": {}
-    }
-    for k, v in d.items():
-        if k not in st.session_state: st.session_state[k] = v
-    if st.session_state.pipeline is None:
-        st.session_state.pipeline = EmotionChatbotPipeline()
-        # Write customer data immediately so backend shows name from turn 1
-        cdata_init = st.session_state.get("customer_data") or {}
-        if cdata_init:
-            st.session_state.pipeline.customer_data = cdata_init
-
-init()
-
-# ── Name input — tester types their own name ─────────────────────────────────
-typed_name = st.text_input(
-    "Your name",
-    value=st.session_state.get("typed_name", ""),
-    placeholder="Enter your name to start...",
-    label_visibility="collapsed",
-    max_chars=40,
-)
-
-# Clean and fallback
-typed_name = typed_name.strip() or "Guest"
-
-# Build customer data from typed name
-# Check if it matches a known VIP customer by name (case-insensitive)
-_known = {
+# ── Known VIP customers ───────────────────────────────────────────────────────
+_KNOWN = {
     "james wilson":       "C001",
     "sarah chen":         "C002",
     "mohammed al-hassan": "C003",
     "emily roberts":      "C004",
     "david park":         "C005",
 }
-_cid_match = _known.get(typed_name.lower(), None)
 
-if _cid_match:
-    # Known customer — load from DynamoDB
-    cid = _cid_match
-else:
-    # Unknown tester — create guest profile with their name
-    cid = f"GUEST_{typed_name[:8].replace(' ','_').upper()}"
 
-# Rebuild cdata when name changes
-if st.session_state.get("typed_name") != typed_name:
-    st.session_state.typed_name = typed_name
-    if _cid_match:
-        is_vip, cdata = is_vip_customer(cid)
-    else:
-        cdata = {
-            "customer_id":   cid,
-            "name":          typed_name,
-            "total_spent":   0.0,
-            "order_count":   0,
-            "is_vip":        False,
-            "last_order":    None,
-        }
-        is_vip = False
-    st.session_state.customer_id     = cid
-    st.session_state.customer_data   = cdata
-    st.session_state.high_value_user = is_vip
-    st.session_state.greeted         = False
-    if st.session_state.pipeline:
-        st.session_state.pipeline.customer_data = cdata
+# ── Session init ──────────────────────────────────────────────────────────────
+def init():
+    d = {
+        "pipeline": None, "messages": [], "frustration_history": [],
+        "turn_labels": [], "last_result": None, "greeted": False,
+        "high_value_user": False, "customer_data": None, "customer_id": None,
+        # FIX: confirmed_name is set only when user clicks Start Chat
+        # This prevents mid-typing reruns from defaulting to "Guest"
+        "confirmed_name": "",
+        "response_modes_used": [], "latencies_ms": [],
+        "survey_submitted": False, "show_survey": False, "survey_data": {}
+    }
+    for k, v in d.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+init()
+
+
+# ── NAME GATE ─────────────────────────────────────────────────────────────────
+# Only show the chat if a name has been confirmed via the Start Chat button.
+# st.stop() below prevents any pipeline/chat code from running until then.
+# This fixes:
+#   1. "Guest" appearing mid-typing (empty string fallback no longer used)
+#   2. VIP names not being recognised (lookup now only runs after full name entered)
+
+if not st.session_state.confirmed_name:
+
+    # Centre the name entry screen
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.markdown("""
+        <div style="text-align:center;padding:60px 0 30px">
+            <div style="width:72px;height:72px;background:linear-gradient(135deg,#6c63ff,#a855f7);
+                border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+                font-size:32px;box-shadow:0 0 0 8px rgba(108,99,255,0.12);margin-bottom:20px">🤖</div>
+            <div style="font-size:22px;font-weight:600;color:#fff;margin-bottom:6px">
+                Welcome to ShopSmart Support
+            </div>
+            <div style="font-size:14px;color:rgba(255,255,255,0.35);margin-bottom:28px">
+                Please enter your name to begin
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        name_field = st.text_input(
+            "Your name",
+            placeholder="Enter your name...",
+            label_visibility="collapsed",
+            max_chars=40,
+            key="name_input_field",
+        )
+
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+        if st.button("Start Chat →", use_container_width=True, key="start_chat"):
+            entered = name_field.strip()
+            if not entered:
+                st.warning("Please enter your name to continue.")
+            else:
+                # ── Resolve customer identity ─────────────────────────────
+                cid_match = _KNOWN.get(entered.lower())
+
+                if cid_match:
+                    # Known VIP — load from DynamoDB
+                    is_vip, cdata = is_vip_customer(cid_match)
+                    cid = cid_match
+                else:
+                    # Guest — build local profile with their typed name
+                    cid = f"GUEST_{entered[:8].replace(' ', '_').upper()}"
+                    cdata = {
+                        "customer_id": cid,
+                        "name":        entered,
+                        "total_spent": 0.0,
+                        "order_count": 0,
+                        "is_vip":      False,
+                        "last_order":  None,
+                    }
+                    is_vip = False
+
+                # ── Commit to session state in one go ─────────────────────
+                st.session_state.confirmed_name   = entered
+                st.session_state.customer_id      = cid
+                st.session_state.customer_data    = cdata
+                st.session_state.high_value_user  = is_vip
+                st.session_state.greeted          = False
+
+                # Initialise pipeline with customer data
+                st.session_state.pipeline = EmotionChatbotPipeline()
+                st.session_state.pipeline.customer_data = cdata
+
+                st.rerun()  # re-render into chat view
+
+    # Block everything below — pipeline, greeting, chat input — until confirmed
+    st.stop()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Everything below only executes after the name has been confirmed
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Ensure pipeline exists (safety net for hot-reload) ───────────────────────
+if st.session_state.pipeline is None:
+    st.session_state.pipeline = EmotionChatbotPipeline()
+    cdata_init = st.session_state.customer_data or {}
+    if cdata_init:
+        st.session_state.pipeline.customer_data = cdata_init
 
 cdata  = st.session_state.customer_data or {}
 is_vip = st.session_state.high_value_user
-c_name = cdata.get("name", "Guest")
-c_init = c_name[0].upper()
-c_spent= cdata.get("total_spent", 0)
+c_name = cdata.get("name", st.session_state.confirmed_name)
+c_init = c_name[0].upper() if c_name else "?"
+c_spent = cdata.get("total_spent", 0)
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
@@ -356,7 +441,7 @@ if not st.session_state.greeted:
 for msg in st.session_state.messages:
     role = msg["role"]
     text = msg["text"]
-    mode = msg.get("mode","normal")
+    mode = msg.get("mode", "normal")
     if role == "user":
         st.markdown(f"""
         <div class="msg-row user">
@@ -381,14 +466,16 @@ for msg in st.session_state.messages:
                 <div><div class="bubble {cls}">{text}</div></div>
             </div>""", unsafe_allow_html=True)
 
+
 # ── Agent alert (customer-friendly wording) ───────────────────────────────────
 if st.session_state.last_result:
-    resp = st.session_state.last_result.get("response",{})
+    resp = st.session_state.last_result.get("response", {})
     if resp.get("alert_agent") and not resp.get("trigger_handover"):
         st.markdown("""
         <div class="alert-wrap">
             ⚡ A support agent has been notified and is on standby if you need them.
         </div>""", unsafe_allow_html=True)
+
 
 # ── Handover bundle ───────────────────────────────────────────────────────────
 if st.session_state.last_result and st.session_state.last_result.get("handover_bundle"):
@@ -396,6 +483,7 @@ if st.session_state.last_result and st.session_state.last_result.get("handover_b
     with st.expander("📋 Your support reference", expanded=True):
         hm = st.session_state.pipeline.handover_manager
         st.code(hm.format_bundle_for_display(bundle), language=None)
+
 
 # ── Quick chips (first message only) ─────────────────────────────────────────
 if not st.session_state.messages:
@@ -424,18 +512,19 @@ if not st.session_state.messages:
                 t0 = time.time()
                 result = st.session_state.pipeline.process(message, customer_data=cdata)
                 tp.empty()
-                lat = (time.time()-t0)*1000
-                _save_result(result, message, lat) if False else None
-                f = result.get("frustration",{})
+                lat = (time.time() - t0) * 1000
+                f = result.get("frustration", {})
                 st.session_state.last_result = result
                 st.session_state.latencies_ms.append(lat)
-                st.session_state.frustration_history.append(f.get("frustration_score",0))
-                st.session_state.turn_labels.append(f"T{result.get('turn',0)}")
+                st.session_state.frustration_history.append(f.get("frustration_score", 0))
+                st.session_state.turn_labels.append(f"T{result.get('turn', 0)}")
                 st.session_state.response_modes_used.append(result["response"]["mode"])
-                st.session_state.messages.append({"role":"user","text":message,"frustration":f.get("frustration_score",0),"level":f.get("level","calm")})
-                st.session_state.messages.append({"role":"bot","text":result["response"]["message"],"mode":result["response"]["mode"]})
-                if result["response"].get("trigger_handover"): st.session_state.show_survey = True
+                st.session_state.messages.append({"role": "user", "text": message, "frustration": f.get("frustration_score", 0), "level": f.get("level", "calm")})
+                st.session_state.messages.append({"role": "bot", "text": result["response"]["message"], "mode": result["response"]["mode"]})
+                if result["response"].get("trigger_handover"):
+                    st.session_state.show_survey = True
                 st.rerun()
+
 
 # ── Survey ────────────────────────────────────────────────────────────────────
 if st.session_state.show_survey and not st.session_state.survey_submitted:
@@ -444,14 +533,17 @@ if st.session_state.show_survey and not st.session_state.survey_submitted:
         <div class="survey-sub">Takes 30 seconds — helps us improve.</div>
     </div>""", unsafe_allow_html=True)
     with st.form("survey"):
-        c1,c2,c3 = st.columns(3)
-        with c1: sat   = st.slider("Satisfaction",1,5,3)
-        with c2: emp   = st.slider("Empathy felt",1,5,3)
-        with c3: trust = st.slider("Trust",1,5,3)
-        resolved = st.radio("Issue resolved?",["Yes, fully","Partially","No"],horizontal=True)
+        c1, c2, c3 = st.columns(3)
+        with c1: sat   = st.slider("Satisfaction", 1, 5, 3)
+        with c2: emp   = st.slider("Empathy felt", 1, 5, 3)
+        with c3: trust = st.slider("Trust", 1, 5, 3)
+        resolved = st.radio("Issue resolved?", ["Yes, fully", "Partially", "No"], horizontal=True)
         comments = st.text_area("Comments (optional)")
         if st.form_submit_button("Submit →", use_container_width=True):
-            st.session_state.survey_data = {"satisfaction":sat,"perceived_empathy":emp,"trust":trust,"resolved":resolved,"comments":comments}
+            st.session_state.survey_data = {
+                "satisfaction": sat, "perceived_empathy": emp,
+                "trust": trust, "resolved": resolved, "comments": comments
+            }
             st.session_state.survey_submitted = True
             st.rerun()
 
@@ -462,25 +554,27 @@ if st.session_state.survey_submitted:
         ✅ Thank you! Satisfaction {d['satisfaction']}/5 · Empathy {d['perceived_empathy']}/5 · Trust {d['trust']}/5
     </div>""", unsafe_allow_html=True)
 
+
 # ── Action buttons ────────────────────────────────────────────────────────────
 if not st.session_state.pipeline.is_handed_over:
-    b1,b2,_ = st.columns([1.2,1.4,3])
+    b1, b2, _ = st.columns([1.2, 1.4, 3])
     with b1:
         if st.button("👤 Human Agent", use_container_width=True):
             result = st.session_state.pipeline.process("I want to speak to a human agent")
-            f = result.get("frustration",{})
+            f = result.get("frustration", {})
             st.session_state.last_result = result
             st.session_state.latencies_ms.append(0)
-            st.session_state.frustration_history.append(f.get("frustration_score",0.5))
-            st.session_state.turn_labels.append(f"T{result.get('turn',0)}")
-            st.session_state.messages.append({"role":"user","text":"I want to speak to a human agent","frustration":0.5})
-            st.session_state.messages.append({"role":"bot","text":result["response"]["message"],"mode":"handover"})
+            st.session_state.frustration_history.append(f.get("frustration_score", 0.5))
+            st.session_state.turn_labels.append(f"T{result.get('turn', 0)}")
+            st.session_state.messages.append({"role": "user", "text": "I want to speak to a human agent", "frustration": 0.5})
+            st.session_state.messages.append({"role": "bot", "text": result["response"]["message"], "mode": "handover"})
             st.session_state.show_survey = True
             st.rerun()
     with b2:
         if st.button("📋 Leave Feedback", use_container_width=True):
             st.session_state.show_survey = True
             st.rerun()
+
 
 # ── Chat input ────────────────────────────────────────────────────────────────
 user_input = st.chat_input(f"Message {BOT_NAME}...")
@@ -497,9 +591,11 @@ if user_input:
     </div>""", unsafe_allow_html=True)
 
     import re as _re
-    _order_match = _re.search(r"order[\s\-#:]*(\d+)", user_input, _re.IGNORECASE) or                    _re.match(r"^#?(\d{4,})$", user_input.strip())
+    _order_match = (
+        _re.search(r"order[\s\-#:]*(\d+)", user_input, _re.IGNORECASE) or
+        _re.match(r"^#?(\d{4,})$", user_input.strip())
+    )
 
-    # If it's an order number — show instant "checking..." bubble first
     if _order_match:
         _onum = _order_match.group(1)
         st.markdown(f"""
@@ -508,7 +604,6 @@ if user_input:
             <div><div class="bubble bot">Got it — checking on order {_onum} for you right now... 🔍</div></div>
         </div>""", unsafe_allow_html=True)
 
-    # Then show typing indicator while Claude processes
     tp = st.empty()
     tp.markdown("""<div class="typing-wrap">
         <div class="av bot">🤖</div>
@@ -522,16 +617,17 @@ if user_input:
     t0 = time.time()
     result = st.session_state.pipeline.process(user_input, customer_data=cdata)
     tp.empty()
-    lat = (time.time()-t0)*1000
+    lat = (time.time() - t0) * 1000
 
-    f = result.get("frustration",{})
+    f = result.get("frustration", {})
     mode = result["response"]["mode"]
     st.session_state.last_result = result
     st.session_state.latencies_ms.append(lat)
-    st.session_state.frustration_history.append(f.get("frustration_score",0))
-    st.session_state.turn_labels.append(f"T{result.get('turn',0)}")
+    st.session_state.frustration_history.append(f.get("frustration_score", 0))
+    st.session_state.turn_labels.append(f"T{result.get('turn', 0)}")
     st.session_state.response_modes_used.append(mode)
-    st.session_state.messages.append({"role":"user","text":user_input,"frustration":f.get("frustration_score",0),"level":f.get("level","calm")})
-    st.session_state.messages.append({"role":"bot","text":result["response"]["message"],"mode":mode})
-    if result["response"].get("trigger_handover"): st.session_state.show_survey = True
+    st.session_state.messages.append({"role": "user", "text": user_input, "frustration": f.get("frustration_score", 0), "level": f.get("level", "calm")})
+    st.session_state.messages.append({"role": "bot", "text": result["response"]["message"], "mode": mode})
+    if result["response"].get("trigger_handover"):
+        st.session_state.show_survey = True
     st.rerun()
