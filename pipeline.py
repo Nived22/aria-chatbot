@@ -44,6 +44,27 @@ class EmotionChatbotPipeline:
         self.trend_tracker = TrendTracker()
         self.handover_manager = HandoverManager()
         self._customer_data = {}
+        self._alert_sent = False
+
+        # FIX: initialise here so they always exist before process() is called
+        self.conversation_history = []
+        self.turn_number = 0
+        self.is_handed_over = False
+
+        # Run GDPR cleanup on startup
+        deleted = purge_expired_logs()
+        if deleted > 0:
+            print(f"[Pipeline] Purged {deleted} expired log file(s).")
+
+        # FIX: warm up RoBERTa model now so first user message is fast
+        try:
+            from models.model_loader import load_model
+            load_model()
+            print("[Pipeline] Model warmed up ✓")
+        except Exception as e:
+            print(f"[Pipeline] Model warmup skipped: {e}")
+
+        print(f"[Pipeline] Session started: {self.session_id}")
 
     @property
     def customer_data(self):
@@ -85,16 +106,6 @@ class EmotionChatbotPipeline:
                 _json.dump(log, _f, indent=2)
         except Exception as e:
             print(f"[Pipeline] Log write error: {e}")
-        self.conversation_history = []   # {role, text, frustration, turn}
-        self.turn_number = 0
-        self.is_handed_over = False
-
-        # Run GDPR cleanup on startup
-        deleted = purge_expired_logs()
-        if deleted > 0:
-            print(f"[Pipeline] Purged {deleted} expired log file(s).")
-
-        print(f"[Pipeline] Session started: {self.session_id}")
 
     def process(self, user_message: str, task_response: str = None, customer_data: dict = None) -> dict:
         """
